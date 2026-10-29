@@ -3,7 +3,7 @@ Application Insights Module
 ---------------------------
 This module creates workspace-based Application Insights for agent tracing with:
 1. Log Analytics workspace
-2. Application Insights component (private ingestion for network-secured templates)
+2. Application Insights component (public ingestion by default, optionally private)
 3. Connection on the Foundry account so agents export OpenTelemetry traces here
 */
 
@@ -16,8 +16,8 @@ param suffix string
 @description('Name of the Foundry (AI Services) account to connect Application Insights to.')
 param aiAccountName string
 
-@description('When true, disable public ingestion (reach Application Insights privately via AMPLS). Set false for public templates.')
-param disablePublicIngestion bool = true
+@description('When true, disable public ingestion for Application Insights and Log Analytics (reach them privately via AMPLS). Queries remain publicly accessible.')
+param disablePublicIngestion bool = false
 
 @description('Name of the Log Analytics workspace to create.')
 param logAnalyticsName string = 'law-tracing-${suffix}'
@@ -38,6 +38,8 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
       name: 'PerGB2018'
     }
     retentionInDays: 30
+    publicNetworkAccessForIngestion: disablePublicIngestion ? 'Disabled' : 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
   }
 }
 

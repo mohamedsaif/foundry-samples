@@ -16,7 +16,7 @@ This enables:
 Architecture:
   Private VNet → AI Services (private) → Data Proxy → Private VNet → Backend Resources
 */
-@description('Location for all resources.')
+@description('Primary location for resources. New AI Search and Cosmos DB resources can use aiSearchLocation and cosmosDBLocation instead.')
 @allowed([
   'westus'
   'westus2'
@@ -119,6 +119,12 @@ param existingPeSubnetResourceId string = ''
 @description('Optional ARM Resource ID of an existing MCP subnet. If provided, the subnet will be referenced as-is and will not be created/modified.')
 param existingMcpSubnetResourceId string = ''
 
+@description('Region for a new AI Search service. Leave empty to use location. Ignored when existingAiSearchResourceId is provided. The private endpoint remains in location.')
+param aiSearchLocation string = ''
+
+@description('Region for a new Cosmos DB account. Leave empty to use location. Ignored when existingAzureCosmosDBAccountResourceId is provided. The private endpoint remains in location.')
+param cosmosDBLocation string = ''
+
 @description('The AI Search Service full ARM Resource ID. Optional — leave empty to create a new one.')
 param existingAiSearchResourceId string = ''
 @description('The AI Storage Account full ARM Resource ID. Optional — leave empty to create a new one.')
@@ -144,6 +150,9 @@ param enableContainerRegistry bool = true
 @description('Optional developer IP CIDR to allowlist for ACR push access (e.g., 203.0.113.0/26 or 10.0.0.0/16). When empty, public access remains disabled.')
 param developerIpCidr string = ''
 
+@description('Enable Azure Monitor private ingestion through AMPLS, its private endpoint, and Monitor DNS integration. When false, Application Insights and Log Analytics allow public ingestion and queries. Queries remain public when enabled.')
+param enableMonitorPrivateLink bool = false
+
 //New Param for resource group of Private DNS zones
 //@description('Optional: Resource group containing existing private DNS zones. If specified, DNS zones will not be created.')
 //param existingDnsZonesResourceGroup string = ''
@@ -161,7 +170,7 @@ param existingDnsZones object = {
   'privatelink.vaultcore.azure.net': { subscriptionId: '', resourceGroup: '' }
 }
 
-@description('Object mapping Azure Monitor private DNS zone names to an existing zone subscription/resource group, or empty strings to create it. Use to bring your own centralized Private DNS Zones (e.g. an Azure Landing Zone) for agent tracing.')
+@description('Object mapping Azure Monitor private DNS zone names to an existing zone subscription/resource group, or empty strings to create it. Used only when enableMonitorPrivateLink is true. Use to bring your own centralized Private DNS Zones (e.g. an Azure Landing Zone) for agent tracing.')
 param existingMonitorDnsZones object = {
   'privatelink.monitor.azure.com': { subscriptionId: '', resourceGroup: '' }
   'privatelink.oms.opinsights.azure.com': { subscriptionId: '', resourceGroup: '' }
@@ -296,7 +305,7 @@ module keyVaultRoleAssignment 'modules-network-secured/key-vault-role-assignment
   `parts[8]` was the very same string used to reference the resource by name).
   An empty resource ID means "create new".
 */
-var aiSearchExists = existingAiSearchResourceId != ''
+var aiSearchExists = searchPassedIn
 var azureStorageExists = existingAzureStorageAccountResourceId != ''
 var cosmosDBExists = existingAzureCosmosDBAccountResourceId != ''
 
@@ -309,8 +318,10 @@ module aiDependencies 'modules-network-secured/standard-dependent-resources.bice
     azureStorageName: azureStorageName
     aiSearchName: aiSearchName
     cosmosDBName: cosmosDBName
+    cosmosDBLocation: cosmosDBLocation
 
     // AI Search Service parameters
+    aiSearchLocation: aiSearchLocation
     existingAiSearchResourceId: existingAiSearchResourceId
     aiSearchExists: aiSearchExists
 
@@ -339,6 +350,8 @@ module privateEndpointAndDNS 'modules-network-secured/private-endpoint-and-dns.b
   name: '${uniqueSuffix}-private-endpoint'
   params: {
     aiAccountName: aiAccount.outputs.accountName // AI Services to secure
+    aiSearchPrivateEndpointLocation: location
+    cosmosDBPrivateEndpointLocation: location
     aiSearchName: aiDependencies.outputs.aiSearchName // AI Search to secure
     storageName: aiDependencies.outputs.azureStorageName // Storage to secure
     cosmosDBName: aiDependencies.outputs.cosmosDBName
@@ -394,13 +407,12 @@ module applicationInsights 'modules-network-secured/application-insights.bicep' 
     location: location
     suffix: uniqueSuffix
     aiAccountName: aiAccount.outputs.accountName
-    disablePublicIngestion: true
+    disablePublicIngestion: enableMonitorPrivateLink
   }
 }
 
-// Private trace ingestion path (Azure Monitor Private Link Scope) so an in-VNet agent's traces
-// reach Application Insights over the private link rather than the (disabled) public endpoint.
-module monitorPrivateLink 'modules-network-secured/monitor-private-link-scope.bicep' = {
+// Optional private trace ingestion path; monitoring resources are created independently.
+module monitorPrivateLink 'modules-network-secured/monitor-private-link-scope.bicep' = if (enableMonitorPrivateLink) {
   name: 'monitor-pls-${uniqueSuffix}-deployment'
   params: {
     location: location

@@ -20,7 +20,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = if (enabled) {
     }
     accessPolicies: []
     enableRbacAuthorization: true
-    enablePurgeProtection: false
+    enablePurgeProtection: true
     softDeleteRetentionInDays: 90
     publicNetworkAccess: 'Enabled'
     networkAcls: {

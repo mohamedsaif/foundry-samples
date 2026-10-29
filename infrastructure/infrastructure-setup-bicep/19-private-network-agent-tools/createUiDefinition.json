@@ -221,6 +221,13 @@
             }
           },
           {
+            "name": "aiSearchLocation",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Region for a new AI Search service (optional)",
+            "defaultValue": "",
+            "toolTip": "Leave empty to use the main deployment region, or enter another Azure region name such as swedencentral. Ignored when selecting an existing Search service. The private endpoint remains in the main region."
+          },
+          {
             "name": "aiSearch",
             "type": "Microsoft.Solutions.ResourceSelector",
             "label": "Existing AI Search service (optional)",
@@ -228,6 +235,13 @@
             "options": {
               "filter": { "subscription": "onePerLine" }
             }
+          },
+          {
+            "name": "cosmosDBLocation",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Region for a new Cosmos DB account (optional)",
+            "defaultValue": "",
+            "toolTip": "Leave empty to use the main deployment region, or enter another Azure region name such as swedencentral. Ignored when selecting an existing Cosmos DB account. The private endpoint remains in the main region."
           },
           {
             "name": "cosmos",
@@ -246,6 +260,13 @@
             "type": "Microsoft.Solutions.ResourceSelector",
             "label": "Existing Key Vault for private CA certificates (optional)",
             "resourceType": "Microsoft.KeyVault/vaults"
+          },
+          {
+            "name": "enableMonitorPrivateLink",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Enable Azure Monitor private ingestion (AMPLS)",
+            "defaultValue": false,
+            "toolTip": "Creates AMPLS, its private endpoint, and Monitor DNS integration, and disables public telemetry ingestion. Leave unchecked for public ingestion and queries. Queries remain public in either mode."
           },
           {
             "name": "fabric",
@@ -285,6 +306,9 @@
       "existingPeSubnetResourceId":     "[if(equals(steps('network').vnetMode, 'existing'), steps('network').existingVnet.subnets.peSubnet.id,      '')]",
       "existingMcpSubnetResourceId":    "[if(equals(steps('network').vnetMode, 'existing'), steps('network').existingVnet.subnets.mcpSubnet.id,     '')]",
 
+      "aiSearchLocation":                      "[steps('byo').aiSearchLocation]",
+      "cosmosDBLocation":                      "[steps('byo').cosmosDBLocation]",
+      "enableMonitorPrivateLink":              "[steps('byo').enableMonitorPrivateLink]",
       "existingAiSearchResourceId":             "[coalesce(steps('byo').aiSearch.id, '')]",
       "existingAzureCosmosDBAccountResourceId": "[coalesce(steps('byo').cosmos.id,   '')]",
       "existingAzureStorageAccountResourceId":  "[coalesce(steps('byo').storage.id,  '')]",

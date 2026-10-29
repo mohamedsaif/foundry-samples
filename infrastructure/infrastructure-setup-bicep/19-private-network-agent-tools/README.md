@@ -28,12 +28,14 @@ This implementation gives you full control over the inbound and outbound communi
 
 By default, the Foundry resource itself also has **public network access disabled**, but this can be switched to public access if needed (see [Switching Between Private and Public Access](#switching-between-private-and-public-access)).
 
+Monitoring is an exception: Application Insights and Log Analytics allow public ingestion and queries by default. Set `enableMonitorPrivateLink=true` to opt in to private telemetry ingestion through AMPLS.
+
 ---
 
 ## When to Use This Template
 
 Use this template when you need:
-- **Full end-to-end network isolation** — All resources behind private endpoints with no public internet access
+- **Private agent networking** — Foundry and agent backing resources behind private endpoints; optionally enable AMPLS for private telemetry ingestion
 - **BYO VNet control** — You manage your own virtual network, subnets, and network security groups
 - **Standard agent setup with BYO resources** — Customer-managed Storage, Cosmos DB, and AI Search for data residency and compliance
 - **Tools behind VNet** — MCP servers, OpenAPI tools, Azure Functions, or A2A agents deployed on the private VNet
@@ -226,7 +228,9 @@ Note: If not provided, the following resources will be created automatically for
 | `existingPeSubnetResourceId` | Full ARM ID of an existing PE subnet to reuse as-is | `''` (creates) | No |
 | `existingMcpSubnetResourceId` | Full ARM ID of an existing MCP subnet to reuse as-is | `''` (creates) | No |
 | `vnetAddressPrefix` | Address space for new VNet | `''` | No |
-| `existingAiSearchResourceId` | ARM Resource ID of existing AI Search | `''` (creates new) | No |
+| `aiSearchLocation` | Region for a newly created AI Search service only. Its private endpoint stays in `location`. Ignored when an existing Search service is supplied. | `''` (uses `location`) | No |
+| `cosmosDBLocation` | Region for a newly created Cosmos DB account and its data location only. Its private endpoint stays in `location`. Ignored when an existing Cosmos DB account is supplied. | `''` (uses `location`) | No |
+| `existingAiSearchResourceId` | ARM Resource ID of existing AI Search. | `''` (creates new) | No |
 | `existingAzureStorageAccountResourceId` | ARM Resource ID of existing Storage account | `''` (creates new) | No |
 | `existingAzureCosmosDBAccountResourceId` | ARM Resource ID of existing Cosmos DB | `''` (creates new) | No |
 | `existingFabricWorkspaceResourceId` | ARM Resource ID of existing Fabric workspace | `''` | No |
@@ -235,6 +239,8 @@ Note: If not provided, the following resources will be created automatically for
 | `existingKeyVaultResourceId` | ARM Resource ID of an existing RBAC-enabled Key Vault. | `''` (creates new) | No |
 | `existingDnsZones` | Map of `'<zoneFqdn>': { subscriptionId, resourceGroup }` — see [Use existing Private DNS zones](#6-use-existing-private-dns-zones-cross-rg--cross-subscription) | All `{ subscriptionId: '', resourceGroup: '' }` (creates new) | No |
 | `enableContainerRegistry` | When `true`, creates an Azure Container Registry (Premium SKU) with a private endpoint in the PE subnet, a `privatelink.azurecr.io` DNS zone, and an AcrPull role assignment for the project managed identity. | `true` | No |
+| `enableMonitorPrivateLink` | Creates AMPLS, scoped resources, a private endpoint, and Monitor-specific DNS integration, and disables public ingestion for Application Insights and Log Analytics. When `false`, monitoring resources still exist and allow public ingestion and queries. Queries remain public in either mode. | `false` | No |
+| `existingMonitorDnsZones` | Existing Monitor DNS zone locations; used only when `enableMonitorPrivateLink=true`. | Creates Monitor zones when private link is enabled | No |
 | `developerIpCidr` | Developer IP CIDR to allowlist for ACR push access (e.g., `203.0.113.0/26`). When set, enables public network access with a deny-all default + an IP allowlist rule so developers can push images. When empty, public access remains fully disabled. | `''` | No |
 
 > **Naming change (May 2026):** `aiSearchResourceId`, `azureStorageAccountResourceId`, `azureCosmosDBAccountResourceId`, and `fabricWorkspaceResourceId` were renamed to `existingAiSearchResourceId`, `existingAzureStorageAccountResourceId`, `existingAzureCosmosDBAccountResourceId`, and `existingFabricWorkspaceResourceId` for consistency with the `existing*ResourceId` pattern used by VNet and subnet params. Update existing parameter files accordingly.
@@ -273,13 +279,35 @@ param existingDnsZones = {
 
 2. **Use an existing Azure Cosmos DB for NoSQL**
 
+To create a new Cosmos DB account in another region, set `cosmosDBLocation` in your parameter file or the portal wizard:
+
+```bicep
+param location = 'uaenorth'
+param cosmosDBLocation = 'swedencentral'
+```
+
+Only the new Cosmos DB account and its data location use this override. Its private endpoint stays in `location`, which must match the VNet/subnet region. Leave `cosmosDBLocation` empty to use the main region. The existing canary-region fallback to `westus` applies to the selected Cosmos DB region and keeps the account and data locations consistent. Cross-region connectivity can add latency and data transfer charges. Changing this parameter does not move an existing account.
+
 To use an existing Cosmos DB for NoSQL resource, set `existingAzureCosmosDBAccountResourceId` to the full Azure Resource ID of the target Cosmos DB.
 - `param existingAzureCosmosDBAccountResourceId = '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.DocumentDB/databaseAccounts/{cosmosDbAccountName}'`
+
+`cosmosDBLocation` is ignored when reusing an existing account; the project connection metadata uses that account's actual region.
 
 
 3. **Use an existing Azure AI Search resource**
 
-To use an existing Azure AI Search resource, set `existingAiSearchResourceId` to the full ARM ID of the target search service.
+AI Search is required for this standard agent setup. The unsupported `enableAiSearch` toggle has been removed; remove it from any custom parameter files. The capability host always receives Storage, Cosmos DB, and AI Search connections.
+
+If the main region has no Search capacity, set `aiSearchLocation` to another supported region in your parameter file or the portal wizard:
+
+```bicep
+param location = 'uaenorth'
+param aiSearchLocation = 'swedencentral'
+```
+
+Only the new Search service moves to `aiSearchLocation`. Its private endpoint stays in `location` and uses the existing private endpoint subnet and DNS configuration. The VNet/subnet must be in the same region as the private endpoint. Leave `aiSearchLocation` empty to keep Search in the main region. Cross-region connectivity can add latency and data transfer charges. An existing Search service cannot be moved by changing this parameter.
+
+To use an existing Azure AI Search resource, set `existingAiSearchResourceId` to the full ARM ID of the target search service. `aiSearchLocation` is then ignored, and the connection metadata uses the existing service's actual region.
  - `param existingAiSearchResourceId = '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Search/searchServices/{searchServiceName}'`
 
 > **AI Search → AI Services connectivity**: This template configures AI Services with `networkAcls.bypass: AzureServices`, which allows Azure AI Search to reach AI Services through the trusted-services bypass. This works for most scenarios. If your security policy requires removing the bypass (setting it to `None`), deploy [Shared Private Links](../deployment-tools/networking/README.md) from AI Search to AI Services instead — this creates a private endpoint from AI Search's managed infrastructure directly into AI Services via Private Link.
@@ -558,21 +586,30 @@ Azure Monitor (Application Insights & Log Analytics)
 - Log Analytics Workspace: Microsoft.OperationalInsights/workspaces
   - SKU: PerGB2018
   - Retention: 30 days
+  - Public ingestion and query access enabled by default
 - Application Insights: Microsoft.Insights/components
   - Kind: web
   - Linked to Log Analytics workspace
-  - Public ingestion disabled (reached privately via AMPLS)
-- Azure Monitor Private Link Scope (AMPLS): microsoft.insights/privateLinkScopes
+  - Public ingestion and query access enabled by default
+- Optional Azure Monitor Private Link Scope (AMPLS): microsoft.insights/privateLinkScopes
+  - Created only when `enableMonitorPrivateLink=true` (default: `false`)
   - Access mode: PrivateOnly ingestion, Open query
+  - Disables public ingestion on both Application Insights and Log Analytics; public queries remain enabled
   - Scoped resources: Application Insights + Log Analytics
   - Enables hosted agents to export telemetry via private network
+
+With the default `enableMonitorPrivateLink=false`, the deployment creates no AMPLS, Monitor scoped resources, Monitor private endpoint, DNS zone group, or Monitor-specific DNS zones/VNet links. Application Insights, Log Analytics, the Foundry monitoring connection, and project monitoring role assignments are still created. Public network access does not grant anonymous access; existing authentication and RBAC still apply. Allow outbound HTTPS to Azure Monitor endpoints for telemetry export.
+
+To opt in to private ingestion, set `param enableMonitorPrivateLink = true` in your parameter file or select the portal checkbox. `existingMonitorDnsZones` is ignored while private link is disabled.
+
+**Existing deployments:** Disabling the toggle during an incremental redeployment does not delete previously deployed AMPLS resources, scoped-resource associations, private endpoints, or DNS integration. Those require separately approved cleanup to remove the old private path. Existing shared Monitor DNS zones and network policies can still affect routing even when this deployment's toggle is off.
 
 ### Network Security Design
 This implementation utilizes a BYO VNet (Bring Your Own Virtual Network) approach, also known as custom VNet support with subnet delegation. Within your existing virtual network, delegated subnets will be created.
 
 Network Security
-- Public network access disabled
-- Private endpoints for all services
+- Public network access disabled for Foundry and agent backing resources
+- Private endpoints for agent services; Azure Monitor private ingestion is optional and disabled by default
 - Network ACLs with deny by default
 
 **Network Infrastructure**
@@ -588,7 +625,7 @@ Private endpoints ensure secure, internal-only connectivity. Private endpoints a
 - Azure Storage
 - Azure Cosmos DB
 - Azure Key Vault
-- Azure Monitor Private Link Scope (AMPLS) — enables telemetry export from hosted agents
+- Azure Monitor Private Link Scope (AMPLS) — only when `enableMonitorPrivateLink=true`
 
 **Private DNS Zones**
 | Private Link Resource Type | Sub Resource | Private DNS Zone Name | Public DNS Zone Forwarders |
@@ -598,7 +635,7 @@ Private endpoints ensure secure, internal-only connectivity. Private endpoints a
 | **Azure Cosmos DB**        | Sql          | `privatelink.documents.azure.com` | `documents.azure.com` |
 | **Azure Storage**          | blob         | `privatelink.blob.core.windows.net` | `blob.core.windows.net` |
 | **Azure Key Vault**        | vault        | `privatelink.vaultcore.azure.net` | `vault.azure.net` |
-| **Azure Monitor (AMPLS)**  | azuremonitor | `privatelink.monitor.azure.com`<br>`privatelink.oms.opinsights.azure.com`<br>`privatelink.ods.opinsights.azure.com`<br>`privatelink.agentsvc.azure-automation.net` | `monitor.azure.com`<br>`oms.opinsights.azure.com`<br>`ods.opinsights.azure.com`<br>`agentsvc.azure-automation.net` |
+| **Azure Monitor (AMPLS, optional)** | azuremonitor | `privatelink.monitor.azure.com`<br>`privatelink.oms.opinsights.azure.com`<br>`privatelink.ods.opinsights.azure.com`<br>`privatelink.agentsvc.azure-automation.net` | `monitor.azure.com`<br>`oms.opinsights.azure.com`<br>`ods.opinsights.azure.com`<br>`agentsvc.azure-automation.net` |
 
 ### Authentication & Authorization
 

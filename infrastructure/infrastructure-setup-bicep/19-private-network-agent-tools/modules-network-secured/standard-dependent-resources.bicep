@@ -3,6 +3,12 @@
 @description('Azure region of the deployment')
 param location string
 
+@description('Region for a new AI Search service. Leave empty to use location. Ignored when reusing an existing service.')
+param aiSearchLocation string = ''
+
+@description('Region for a new Cosmos DB account. Leave empty to use location. Ignored when reusing an existing account.')
+param cosmosDBLocation string = ''
+
 // @description('The name of the Key Vault')
 // param keyvaultName string
 
@@ -39,7 +45,8 @@ resource existingCosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' exi
 // CosmosDB creation
 
 var canaryRegions = ['eastus2euap', 'centraluseuap']
-var cosmosDbRegion = contains(canaryRegions, location) ? 'westus' : location
+var requestedCosmosDBLocation = empty(cosmosDBLocation) ? location : cosmosDBLocation
+var cosmosDbRegion = contains(canaryRegions, requestedCosmosDBLocation) ? 'westus' : requestedCosmosDBLocation
 resource cosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = if(!cosmosDBExists) {
   name: cosmosDBName
   location: cosmosDbRegion
@@ -55,7 +62,7 @@ resource cosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = if(!cosmo
     enableFreeTier: false
     locations: [
       {
-        locationName: location
+        locationName: cosmosDbRegion
         failoverPriority: 0
         isZoneRedundant: false
       }
@@ -73,9 +80,9 @@ resource existingSearchService 'Microsoft.Search/searchServices@2024-06-01-previ
 
 // AI Search creation
 
-resource aiSearch 'Microsoft.Search/searchServices@2024-06-01-preview' = if(!aiSearchExists) {
+resource aiSearch 'Microsoft.Search/searchServices@2024-06-01-preview' = if (!aiSearchExists) {
   name: aiSearchName
-  location: location
+  location: empty(aiSearchLocation) ? location : aiSearchLocation
   identity: {
     type: 'SystemAssigned'
   }
@@ -96,7 +103,7 @@ resource aiSearch 'Microsoft.Search/searchServices@2024-06-01-preview' = if(!aiS
     }
   }
   sku: {
-    name: 'standard'
+    name: 'basic'
   }
 }
 

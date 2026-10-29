@@ -27,10 +27,14 @@ Security Benefits:
 param aiAccountName string
 @description('Name of the AI Search service')
 param aiSearchName string
+@description('Region for the AI Search private endpoint. Must match the private endpoint subnet region, not necessarily the Search service region.')
+param aiSearchPrivateEndpointLocation string = resourceGroup().location
 @description('Name of the storage account')
 param storageName string
 @description('Name of the Cosmos DB account')
 param cosmosDBName string
+@description('Region for the Cosmos DB private endpoint. Must match the private endpoint subnet region, not necessarily the Cosmos DB account region.')
+param cosmosDBPrivateEndpointLocation string = resourceGroup().location
 @description('The Microsoft Fabric Workspace full ARM Resource ID. Optional - leave empty to skip Fabric private endpoint.')
 param fabricWorkspaceResourceId string = ''
 @description('The Key Vault full ARM Resource ID. Optional - leave empty to skip the Key Vault private endpoint.')
@@ -149,7 +153,7 @@ resource aiAccountPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01
 // - Establishes private connection to AI Search service
 resource aiSearchPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
   name: '${aiSearchName}-private-endpoint'
-  location: resourceGroup().location
+  location: aiSearchPrivateEndpointLocation
   properties: {
     subnet: { id: peSubnet.id } // Deploy in customer hub subnet
     privateLinkServiceConnections: [
@@ -190,7 +194,7 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' 
 
 resource cosmosDBPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
   name: '${cosmosDBName}-private-endpoint'
-  location: resourceGroup().location
+  location: cosmosDBPrivateEndpointLocation
   properties: {
     subnet: { id: peSubnet.id } // Deploy in customer hub subnet
     privateLinkServiceConnections: [

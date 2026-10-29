@@ -7,7 +7,6 @@ param projectCapHost string
 
 var threadConnections = ['${cosmosDBConnection}']
 var storageConnections = ['${azureStorageConnection}']
-var vectorStoreConnections = ['${aiSearchConnection}']
 
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' existing = {
@@ -23,8 +22,9 @@ resource projectCapabilityHost 'Microsoft.CognitiveServices/accounts/projects/ca
   name: projectCapHost
   parent: project
   properties: {
+    #disable-next-line BCP037
     capabilityHostKind: 'Agents'
-    vectorStoreConnections: vectorStoreConnections
+    vectorStoreConnections: [aiSearchConnection]
     storageConnections: storageConnections
     threadStorageConnections: threadConnections
   }

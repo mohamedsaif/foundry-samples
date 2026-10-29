@@ -56,6 +56,12 @@
     "peSubnetPrefix": {
       "value": ""
     },
+    "aiSearchLocation": {
+      "value": ""
+    },
+    "cosmosDBLocation": {
+      "value": ""
+    },
     "existingAiSearchResourceId": {
       "value": ""
     },
@@ -70,6 +76,9 @@
     },
     "enableKeyVault": {
       "value": true
+    },
+    "enableMonitorPrivateLink": {
+      "value": false
     },
     "keyVaultName": {
       "value": ""
